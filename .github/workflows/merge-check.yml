@@ -5,6 +5,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
+permissions:
+  pull-requests: write   # needed to post a comment on the PR
+
 jobs:
   jira-policy-check:
     runs-on: ubuntu-latest
@@ -26,9 +29,11 @@ jobs:
 
       - name: Check Jira Merge Policy
         env:
-          ISSUE_KEY: "${{ steps.extract.outputs.issue_key }}"
-          BASE_REF:  "${{ github.base_ref }}"
+          ISSUE_KEY:  "${{ steps.extract.outputs.issue_key }}"
+          BASE_REF:   "${{ github.base_ref }}"
           WEBHOOK_URL: "${{ secrets.MERGE_BETTER_WEBHOOK_URL }}"
+          GH_TOKEN:   "${{ github.token }}"
+          PR_NUMBER:  "${{ github.event.pull_request.number }}"
         run: |
           JSON_BODY="{\"issueKey\":\"$ISSUE_KEY\",\"branch\":\"$BASE_REF\",\"policyId\":1}"
           RESPONSE=$(curl -s -w "\n%{http_code}" \
@@ -48,21 +53,33 @@ jobs:
 
           if [ "$ALLOWED" = "true" ]; then
             echo "[OK] All merge policies passed. PR is clear to merge."
-            echo "## [OK] MergeBetter: All checks passed" >> $GITHUB_STEP_SUMMARY
-            echo "Issue **$ISSUE_KEY** satisfies all merge policies for branch **$BASE_REF**." >> $GITHUB_STEP_SUMMARY
+            {
+              echo "## MergeBetter: All checks passed"
+              echo "Issue **$ISSUE_KEY** satisfies all merge policies for branch **$BASE_REF**."
+            } >> $GITHUB_STEP_SUMMARY
           else
             echo "[X] Merge blocked by MergeBetter policy:"
             echo "$BODY" | jq -r '.failures[] | "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)"'
 
-            # Show a formatted summary in the GitHub Actions "Details" panel
-            echo "## [X] MergeBetter: Merge blocked" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Policy | Branch Rule | Reason |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
-            echo "$BODY" | jq -r '.failures[] | "| \(.policy) | \(.rule) | \(.reason) |"' >> $GITHUB_STEP_SUMMARY
+            # Post a comment directly on the PR conversation tab
+            {
+              echo "## MergeBetter: Merge Blocked"
+              echo ""
+              echo "Issue **$ISSUE_KEY** does not meet the merge policy for branch **$BASE_REF**."
+              echo ""
+              echo "| Policy | Branch Rule | Reason |"
+              echo "|--------|-------------|--------|"
+              echo "$BODY" | jq -r '.failures[] | "| \(.policy) | \(.rule) | \(.reason) |"'
+            } | gh pr comment "$PR_NUMBER" --body-file -
 
-            # Emit ::error:: annotations - these appear as inline alerts on the PR page
-            echo "$BODY" | jq -r '.failures[] | "::error title=MergeBetter - \(.policy)::\(.reason)"'
+            # Also write to the step summary (visible via the "Details" link)
+            {
+              echo "## MergeBetter: Merge Blocked"
+              echo ""
+              echo "| Policy | Branch Rule | Reason |"
+              echo "|--------|-------------|--------|"
+              echo "$BODY" | jq -r '.failures[] | "| \(.policy) | \(.rule) | \(.reason) |"'
+            } >> $GITHUB_STEP_SUMMARY
 
             exit 1
           fi
