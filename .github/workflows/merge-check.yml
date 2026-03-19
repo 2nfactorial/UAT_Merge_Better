@@ -1,4 +1,3 @@
-# .github/workflows/merge-check.yml
 name: MergeBetter Jira Policy Check
 
 on:
@@ -6,7 +5,7 @@ on:
     types: [opened, synchronize, reopened, edited]
 
 permissions:
-  pull-requests: write   # needed to post a comment on the PR
+  pull-requests: write
 
 jobs:
   jira-policy-check:
@@ -23,16 +22,16 @@ jobs:
             | grep -oE '[A-Z]+-[0-9]+' | head -1)
           if [ -z "$ISSUE_KEY" ]; then
             echo "[X] No Jira issue key found in PR title."
-
-            gh pr comment "$PR_NUMBER" --body "## MergeBetter: No Jira Issue Key Found
-
-Please add a Jira issue key to your PR title.
-
-| Field | Value |
-|-------|-------|
-| Current title | \`$PR_TITLE\` |
-| Expected format | \`PROJ-123 Your PR description\` |"
-
+            {
+              echo "## MergeBetter: No Jira Issue Key Found"
+              echo ""
+              echo "Please add a Jira issue key to your PR title."
+              echo ""
+              echo "| Field | Value |"
+              echo "|-------|-------|"
+              echo "| Current title | \`$PR_TITLE\` |"
+              echo "| Expected format | \`PROJ-123 Your PR description\` |"
+            } | gh pr comment "$PR_NUMBER" --body-file -
             exit 1
           fi
           echo "[OK] Found Jira issue key: $ISSUE_KEY"
@@ -40,11 +39,11 @@ Please add a Jira issue key to your PR title.
 
       - name: Check Jira Merge Policy
         env:
-          ISSUE_KEY:  "${{ steps.extract.outputs.issue_key }}"
-          BASE_REF:   "${{ github.base_ref }}"
+          ISSUE_KEY:   "${{ steps.extract.outputs.issue_key }}"
+          BASE_REF:    "${{ github.base_ref }}"
           WEBHOOK_URL: "${{ secrets.MERGE_BETTER_WEBHOOK_URL }}"
-          GH_TOKEN:   "${{ github.token }}"
-          PR_NUMBER:  "${{ github.event.pull_request.number }}"
+          GH_TOKEN:    "${{ github.token }}"
+          PR_NUMBER:   "${{ github.event.pull_request.number }}"
         run: |
           JSON_BODY="{\"issueKey\":\"$ISSUE_KEY\",\"branch\":\"$BASE_REF\",\"policyId\":1}"
           RESPONSE=$(curl -s -w "\n%{http_code}" \
@@ -52,16 +51,12 @@ Please add a Jira issue key to your PR title.
             -H "Content-Type: application/json" \
             -d "$JSON_BODY" \
             "$WEBHOOK_URL")
-
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
-
           echo "-- MergeBetter Response --"
           echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
           echo "--------------------------"
-
           ALLOWED=$(echo "$BODY" | jq -r '.allowed // false')
-
           if [ "$ALLOWED" = "true" ]; then
             echo "[OK] All merge policies passed. PR is clear to merge."
             {
@@ -71,8 +66,6 @@ Please add a Jira issue key to your PR title.
           else
             echo "[X] Merge blocked by MergeBetter policy:"
             echo "$BODY" | jq -r '.failures[] | "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)"'
-
-            # Post a comment directly on the PR conversation tab
             {
               echo "## MergeBetter: Merge Blocked"
               echo ""
@@ -82,8 +75,6 @@ Please add a Jira issue key to your PR title.
               echo "|--------|-------------|--------|"
               echo "$BODY" | jq -r '.failures[] | "| \(.policy) | \(.rule) | \(.reason) |"'
             } | gh pr comment "$PR_NUMBER" --body-file -
-
-            # Also write to the step summary (visible via the "Details" link)
             {
               echo "## MergeBetter: Merge Blocked"
               echo ""
@@ -91,6 +82,5 @@ Please add a Jira issue key to your PR title.
               echo "|--------|-------------|--------|"
               echo "$BODY" | jq -r '.failures[] | "| \(.policy) | \(.rule) | \(.reason) |"'
             } >> $GITHUB_STEP_SUMMARY
-
             exit 1
           fi
