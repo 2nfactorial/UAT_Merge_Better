@@ -30,14 +30,11 @@ jobs:
           BASE_REF:  "${{ github.base_ref }}"
           WEBHOOK_URL: "${{ secrets.MERGE_BETTER_WEBHOOK_URL }}"
         run: |
+          JSON_BODY="{\"issueKey\":\"$ISSUE_KEY\",\"branch\":\"$BASE_REF\",\"policyId\":YOUR_POLICY_ID}"
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
-            -d "{
-              \"issueKey\": \"$ISSUE_KEY\",
-              \"branch\":   \"$BASE_REF\",
-              \"policyId\": YOUR_POLICY_ID
-            }" \
+            -d "$JSON_BODY" \
             "$WEBHOOK_URL")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
@@ -53,7 +50,6 @@ jobs:
             echo "[OK] All merge policies passed. PR is clear to merge."
           else
             echo "[X] Merge blocked by MergeBetter policy:"
-            echo "$BODY" | jq -r '.failures[] | \
-              "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)"'
+            echo "$BODY" | jq -r '.failures[] | "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)"'
             exit 1
           fi
