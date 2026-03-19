@@ -1,0 +1,59 @@
+name: MergeBetter Jira Policy Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  jira-policy-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract Jira Issue Key from PR Title
+        id: extract
+        env:
+          PR_TITLE: "${{ github.event.pull_request.title }}"
+        run: |
+          ISSUE_KEY=$(echo "$PR_TITLE" \
+            | grep -oE '[A-Z]+-[0-9]+' | head -1)
+          if [ -z "$ISSUE_KEY" ]; then
+            echo "❌ No Jira issue key found in PR title."
+            echo "   Please include the issue key, e.g: NEON-123 Your PR title"
+            exit 1
+          fi
+          echo "✅ Found Jira issue key: $ISSUE_KEY"
+          echo "issue_key=$ISSUE_KEY" >> $GITHUB_OUTPUT
+
+      - name: Check Jira Merge Policy
+        env:
+          ISSUE_KEY: "${{ steps.extract.outputs.issue_key }}"
+          BASE_REF: "${{ github.base_ref }}"
+          WEBHOOK_URL: "${{ secrets.MERGE_BETTER_WEBHOOK_URL }}"
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"issueKey\": \"$ISSUE_KEY\",
+              \"branch\":   \"$BASE_REF\",
+              \"policyId\": 1
+            }" \
+            "$WEBHOOK_URL")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "── MergeBetter Response ──────────────────────"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+          echo "──────────────────────────────────────────────"
+
+          ALLOWED=$(echo "$BODY" | jq -r '.allowed // false')
+
+          if [ "$ALLOWED" = "true" ]; then
+            echo "✅ All merge policies passed. PR is clear to merge."
+          else
+            echo ""
+            echo "❌ Merge blocked by MergeBetter policy:"
+            echo ""
+            echo "$BODY" | jq -r '.failures[] | "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)\n"'
+            exit 1
+          fi
