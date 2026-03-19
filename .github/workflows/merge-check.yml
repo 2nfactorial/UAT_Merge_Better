@@ -30,7 +30,7 @@ jobs:
           BASE_REF:  "${{ github.base_ref }}"
           WEBHOOK_URL: "${{ secrets.MERGE_BETTER_WEBHOOK_URL }}"
         run: |
-          JSON_BODY="{\"issueKey\":\"$ISSUE_KEY\",\"branch\":\"$BASE_REF\",\"policyId\":YOUR_POLICY_ID}"
+          JSON_BODY="{\"issueKey\":\"$ISSUE_KEY\",\"branch\":\"$BASE_REF\",\"policyId\":1}"
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
