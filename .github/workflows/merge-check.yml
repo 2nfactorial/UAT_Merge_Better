@@ -30,14 +30,11 @@ jobs:
           BASE_REF:  "${{ github.base_ref }}"
           WEBHOOK_URL: "${{ secrets.MERGE_BETTER_WEBHOOK_URL }}"
         run: |
+          JSON_BODY="{\"issueKey\":\"$ISSUE_KEY\",\"branch\":\"$BASE_REF\",\"policyId\":1}"
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
-            -d "{
-              \"issueKey\": \"$ISSUE_KEY\",
-              \"branch\":   \"$BASE_REF\",
-              \"policyId\": YOUR_POLICY_ID
-            }" \
+            -d "$JSON_BODY" \
             "$WEBHOOK_URL")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
@@ -51,9 +48,21 @@ jobs:
 
           if [ "$ALLOWED" = "true" ]; then
             echo "[OK] All merge policies passed. PR is clear to merge."
+            echo "## [OK] MergeBetter: All checks passed" >> $GITHUB_STEP_SUMMARY
+            echo "Issue **$ISSUE_KEY** satisfies all merge policies for branch **$BASE_REF**." >> $GITHUB_STEP_SUMMARY
           else
             echo "[X] Merge blocked by MergeBetter policy:"
-            echo "$BODY" | jq -r '.failures[] | \
-              "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)"'
+            echo "$BODY" | jq -r '.failures[] | "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)"'
+
+            # Show a formatted summary in the GitHub Actions "Details" panel
+            echo "## [X] MergeBetter: Merge blocked" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Policy | Branch Rule | Reason |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "$BODY" | jq -r '.failures[] | "| \(.policy) | \(.rule) | \(.reason) |"' >> $GITHUB_STEP_SUMMARY
+
+            # Emit ::error:: annotations - these appear as inline alerts on the PR page
+            echo "$BODY" | jq -r '.failures[] | "::error title=MergeBetter - \(.policy)::\(.reason)"'
+
             exit 1
           fi
