@@ -15,13 +15,24 @@ jobs:
       - name: Extract Jira Issue Key from PR Title
         id: extract
         env:
-          PR_TITLE: "${{ github.event.pull_request.title }}"
+          PR_TITLE:  "${{ github.event.pull_request.title }}"
+          GH_TOKEN:  "${{ github.token }}"
+          PR_NUMBER: "${{ github.event.pull_request.number }}"
         run: |
           ISSUE_KEY=$(echo "$PR_TITLE" \
             | grep -oE '[A-Z]+-[0-9]+' | head -1)
           if [ -z "$ISSUE_KEY" ]; then
             echo "[X] No Jira issue key found in PR title."
-            echo "    Please include the key, e.g: NEON-123 Your PR title"
+
+            gh pr comment "$PR_NUMBER" --body "## MergeBetter: No Jira Issue Key Found
+
+Please add a Jira issue key to your PR title.
+
+| Field | Value |
+|-------|-------|
+| Current title | \`$PR_TITLE\` |
+| Expected format | \`PROJ-123 Your PR description\` |"
+
             exit 1
           fi
           echo "[OK] Found Jira issue key: $ISSUE_KEY"
