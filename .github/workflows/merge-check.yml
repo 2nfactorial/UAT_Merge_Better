@@ -1,3 +1,4 @@
+# .github/workflows/merge-check.yml
 name: MergeBetter Jira Policy Check
 
 on:
@@ -16,17 +17,17 @@ jobs:
           ISSUE_KEY=$(echo "$PR_TITLE" \
             | grep -oE '[A-Z]+-[0-9]+' | head -1)
           if [ -z "$ISSUE_KEY" ]; then
-            echo "❌ No Jira issue key found in PR title."
-            echo "   Please include the issue key, e.g: NEON-123 Your PR title"
+            echo "[X] No Jira issue key found in PR title."
+            echo "    Please include the key, e.g: NEON-123 Your PR title"
             exit 1
           fi
-          echo "✅ Found Jira issue key: $ISSUE_KEY"
+          echo "[OK] Found Jira issue key: $ISSUE_KEY"
           echo "issue_key=$ISSUE_KEY" >> $GITHUB_OUTPUT
 
       - name: Check Jira Merge Policy
         env:
           ISSUE_KEY: "${{ steps.extract.outputs.issue_key }}"
-          BASE_REF: "${{ github.base_ref }}"
+          BASE_REF:  "${{ github.base_ref }}"
           WEBHOOK_URL: "${{ secrets.MERGE_BETTER_WEBHOOK_URL }}"
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" \
@@ -35,25 +36,24 @@ jobs:
             -d "{
               \"issueKey\": \"$ISSUE_KEY\",
               \"branch\":   \"$BASE_REF\",
-              \"policyId\": 1
+              \"policyId\": YOUR_POLICY_ID
             }" \
             "$WEBHOOK_URL")
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
 
-          echo "── MergeBetter Response ──────────────────────"
+          echo "-- MergeBetter Response --"
           echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
-          echo "──────────────────────────────────────────────"
+          echo "--------------------------"
 
           ALLOWED=$(echo "$BODY" | jq -r '.allowed // false')
 
           if [ "$ALLOWED" = "true" ]; then
-            echo "✅ All merge policies passed. PR is clear to merge."
+            echo "[OK] All merge policies passed. PR is clear to merge."
           else
-            echo ""
-            echo "❌ Merge blocked by MergeBetter policy:"
-            echo ""
-            echo "$BODY" | jq -r '.failures[] | "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)\n"'
+            echo "[X] Merge blocked by MergeBetter policy:"
+            echo "$BODY" | jq -r '.failures[] | \
+              "  Policy : \(.policy)\n  Branch : \(.rule)\n  Reason : \(.reason)"'
             exit 1
           fi
